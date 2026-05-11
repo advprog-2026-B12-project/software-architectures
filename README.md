@@ -335,3 +335,8 @@ graph LR
 ```
 
 Strategi migrasi yang direkomendasikan adalah Strangler Fig Pattern. Ekstrak satu modul sekaligus, mulai dari Achievements karena sudah memiliki `processEvent()` yang didesain untuk konsumsi event, lalu perkenalkan broker di samping monolith dan secara bertahap alihkan traffic ke service baru.
+
+## Individual Diagram
+
+| [Ahmad Faiq Fawwaz Abdussalam](Auth.md) | [Sabina Maritza Moenzil]() | [Julius Albert Wirayudas]() | [Muhammad Hariz Albaari]() | [Fadhil Daffa Putra Irawan]() |
+| -- | -- | -- | -- | -- |
