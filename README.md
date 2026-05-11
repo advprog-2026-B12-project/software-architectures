@@ -114,8 +114,8 @@ graph TB
 
     subgraph github ["GitHub"]
         Repo["📦 Repository<br/><i>advprog-2026-B12-project/<br/>yomu-backend</i>"]
-        CI["🔄 CI Pipeline<br/><i>ci.yaml — test, JaCoCo,<br/>SonarQube</i>"]
-        CD["🚀 CD Pipeline<br/><i>cd.yaml — bootJar<br/>deploy.yml — Docker push</i>"]
+        CI["🔄 CI Pipeline<br/><i>ci.yaml - test, JaCoCo,<br/>SonarQube</i>"]
+        CD["🚀 CD Pipeline<br/><i>cd.yaml - bootJar<br/>deploy.yml - Docker push</i>"]
         GHCR["📦 GHCR<br/><i>Docker Image Registry</i>"]
     end
 
@@ -158,7 +158,7 @@ graph TB
 
 ---
 
-## Future Container Diagram — Event-Driven Architecture (EDA)
+## Future Container Diagram - Event-Driven Architecture (EDA)
 
 ```mermaid
 graph TB
@@ -242,3 +242,96 @@ graph TB
 | Clan Service | `clan_db` | `clans`, `clan_members` |
 | Comment Service | `comment_db` | `comments`, `comment_reactions` |
 | User Service | `user_db` | `user_profiles` |
+
+---
+
+## Risk Storming - Monolith di Bawah Skala Besar
+
+Risk Storming mengevaluasi apa yang bisa salah ketika Yomu mendapatkan popularitas besar (100.000+ pengguna concurrent).
+
+### Risk Map
+
+```mermaid
+graph LR
+    subgraph high ["🔴 HIGH RISK"]
+        R1["Single Point of Failure<br/><i>Satu crash mematikan semua modul</i>"]
+        R2["Database Bottleneck<br/><i>Semua 5 modul berbagi<br/>satu PostgreSQL</i>"]
+        R3["Tidak Bisa Scale Independen<br/><i>Beban Quiz tidak sama dengan beban Clan</i>"]
+        R4["Tight Coupling<br/><i>Comment mengimport repository<br/>Quiz dan Auth secara langsung</i>"]
+    end
+
+    subgraph med ["🟡 MEDIUM RISK"]
+        R5["Risiko Deployment<br/><i>Setiap perubahan me-redeploy<br/>seluruh monolith</i>"]
+        R6["Cascade Failures<br/><i>Query leaderboard lambat<br/>memblokir submit kuis</i>"]
+        R7["Season Reset Locks<br/><i>triggerSeasonReset() menahan<br/>transaksi DB yang panjang</i>"]
+    end
+
+    subgraph low ["🟢 LOW RISK"]
+        R8["Single EC2 Instance<br/><i>Tidak ada redundansi horizontal</i>"]
+        R9["Event Wiring yang Hilang<br/><i>Quiz ke Achievement belum<br/>terhubung</i>"]
+    end
+
+    style high fill:#FEE2E2,color:#991B1B,stroke:#EF4444
+    style med fill:#FEF3C7,color:#92400E,stroke:#F59E0B
+    style low fill:#DCFCE7,color:#166534,stroke:#22C55E
+```
+
+### Analisis Risiko Detail
+
+| # | Risiko | Severity | Dampak | Area |
+|---|---|---|---|---|
+| **R1** | **Single Point of Failure** | Tinggi | Jika JVM crash atau OOM, semua fitur mati sekaligus | Availability |
+| **R2** | **Shared Database Bottleneck** | Tinggi | Semua modul berebut connection pool PostgreSQL yang sama. Query N+1 leaderboard akan menghabiskan koneksi untuk submit kuis | Performance |
+| **R3** | **Tidak Bisa Scale Independen** | Tinggi | Saat peak hour, traffic kuis bisa 10x traffic clan, tapi tidak bisa scale pemrosesan kuis saja | Scalability |
+| **R4** | **Tight Cross-Module Coupling** | Tinggi | `CommentServiceImpl` langsung mengimport `UserRepository` dan `ReadingRepository` dari modul lain. Perubahan model Auth/Quiz merusak Comments | Maintainability |
+| **R5** | **Deployment Berisiko** | Sedang | Bug fix di Comments membutuhkan redeploy seluruh aplikasi, berisiko regresi Auth/Quiz | Reliability |
+| **R6** | **Cascade Failures** | Sedang | `LeagueService.getLeaderboardByDivision()` yang lambat menghabiskan thread pool dan memblokir request yang tidak terkait | Performance |
+| **R7** | **Transaksi Panjang saat Season Reset** | Sedang | `triggerSeasonReset()` memproses semua 4 divisi dalam satu `@Transactional`, mengunci baris di seluruh clan | Data Integrity |
+| **R8** | **Single EC2, Tanpa Redundansi** | Rendah | Saat ini masih bisa diterima untuk proyek mahasiswa, tapi fatal pada skala besar | Availability |
+| **R9** | **Quiz→Achievement Belum Terhubung** | Rendah | `processEvent()` sudah ada tapi quiz completion belum memanggilnya | Correctness |
+
+---
+
+## 6. Bagaimana EDA Menyelesaikan Risiko yang Teridentifikasi
+
+| Risiko | Solusi EDA |
+|---|---|
+| **R1 - Single Point of Failure** | Setiap service berjalan independen. Jika Achievement Service crash, Quiz dan Auth tetap berjalan. Event yang belum diproses disimpan di broker dan di-replay saat recovery. |
+| **R2 - Database Bottleneck** | Database per service menghilangkan contention. Query leaderboard pada `clan_db` tidak bisa mengganggu submit kuis pada `quiz_db`. |
+| **R3 - Tidak Bisa Scale Independen** | Quiz Service bisa scale ke 10 replika saat peak hour sementara Clan Service tetap di 2 replika. |
+| **R4 - Tight Coupling** | Modul hanya berkomunikasi lewat events. Comment Service subscribe ke `user.registered` untuk menyimpan cache lokal, bukan mengimport `UserRepository` secara langsung. |
+| **R5 - Deployment Berisiko** | Setiap service di-deploy independen. Bug fix di Comments hanya men-deploy Comment Service saja. |
+| **R6 - Cascade Failures** | Pemrosesan event secara asynchronous via broker berarti kalkulasi leaderboard yang lambat tidak bisa memblokir submit kuis. |
+| **R7 - Transaksi Panjang Season Reset** | Season reset mempublish event `season.reset`. Pemrosesan dipecah menjadi transaksi kecil independen per clan. |
+| **R8 - Single EC2** | Microservices secara natural di-deploy di banyak node dengan container orchestration. |
+| **R9 - Quiz→Achievement Belum Terhubung** | EDA membuat ini mudah: Quiz Service publish `quiz.completed`; Achievement Service subscribe dan memanggil `processEvent()`. |
+
+### Ringkasan: Monolith vs EDA
+
+```mermaid
+graph LR
+    subgraph mono ["Saat Ini: Monolith"]
+        direction TB
+        M1["Satu proses = satu failure domain"]
+        M2["Shared DB = contention"]
+        M3["Scale semua atau tidak sama sekali"]
+        M4["Direct imports = tight coupling"]
+        M5["Full redeploy setiap perubahan"]
+    end
+
+    subgraph eda ["Masa Depan: EDA"]
+        direction TB
+        E1["Failure domain terisolasi"]
+        E2["DB per service = tidak ada contention"]
+        E3["Scale setiap service secara independen"]
+        E4["Events = loose coupling"]
+        E5["Deployment independen"]
+    end
+
+    mono -->|"migrasi"| eda
+
+    style mono fill:#FEE2E2,color:#991B1B,stroke:#EF4444
+    style eda fill:#DCFCE7,color:#166534,stroke:#22C55E
+```
+
+Strategi migrasi yang direkomendasikan adalah Strangler Fig Pattern. Ekstrak satu modul sekaligus, mulai dari Achievements karena sudah memiliki `processEvent()` yang didesain untuk konsumsi event, lalu perkenalkan broker di samping monolith dan secara bertahap alihkan traffic ke service baru.
