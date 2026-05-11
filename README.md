@@ -157,3 +157,88 @@ graph TB
 | **Frontend** | Next.js (repo terpisah) | Di-deploy secara independen |
 
 ---
+
+## Future Container Diagram — Event-Driven Architecture (EDA)
+
+```mermaid
+graph TB
+    Reader["👤 Reader"]
+    Admin["👤 Admin"]
+    FE["🌐 Next.js Frontend"]
+    APIGW["🚪 API Gateway<br/><i>Rate limiting, routing,<br/>JWT validation</i>"]
+    Google["🔐 Google OAuth"]
+
+    subgraph broker ["Message Broker (RabbitMQ/Kafka)"]
+        direction LR
+        Q1["📨 quiz.completed"]
+        Q2["📨 user.registered"]
+        Q3["📨 reading.finished"]
+        Q4["📨 season.reset"]
+        Q5["📨 achievement.unlocked"]
+    end
+
+    subgraph services ["Microservices"]
+        direction TB
+        AUTH_SVC["🔐 Auth Service<br/><i>Own DB</i>"]
+        QUIZ_SVC["📖 Reading &amp; Quiz Service<br/><i>Own DB</i>"]
+        ACH_SVC["🏆 Achievement Service<br/><i>Own DB</i>"]
+        CLAN_SVC["⚔️ Social &amp; League Service<br/><i>Own DB</i>"]
+        COMMENT_SVC["💬 Discussion Service<br/><i>Own DB</i>"]
+        USER_SVC["👤 User Service<br/><i>Own DB</i>"]
+    end
+
+    Reader --> FE
+    Admin --> FE
+    FE -->|HTTPS| APIGW
+    APIGW --> AUTH_SVC
+    APIGW --> QUIZ_SVC
+    APIGW --> ACH_SVC
+    APIGW --> CLAN_SVC
+    APIGW --> COMMENT_SVC
+    APIGW --> USER_SVC
+    AUTH_SVC -->|verify| Google
+
+    QUIZ_SVC -->|"publish"| Q1
+    QUIZ_SVC -->|"publish"| Q3
+    AUTH_SVC -->|"publish"| Q2
+    CLAN_SVC -->|"publish"| Q4
+    ACH_SVC -->|"publish"| Q5
+
+    Q1 -->|"subscribe"| ACH_SVC
+    Q1 -->|"subscribe"| CLAN_SVC
+    Q3 -->|"subscribe"| ACH_SVC
+    Q2 -->|"subscribe"| ACH_SVC
+    Q4 -->|"subscribe"| CLAN_SVC
+    Q5 -->|"subscribe"| USER_SVC
+
+    style broker fill:#7C3AED,color:#fff,stroke:#6D28D9
+    style services fill:#1E293B,color:#E2E8F0,stroke:#475569
+    style APIGW fill:#F97316,color:#fff,stroke:#EA580C
+    style AUTH_SVC fill:#6366F1,color:#fff,stroke:#4F46E5
+    style QUIZ_SVC fill:#06B6D4,color:#fff,stroke:#0891B2
+    style ACH_SVC fill:#F59E0B,color:#fff,stroke:#D97706
+    style CLAN_SVC fill:#EF4444,color:#fff,stroke:#DC2626
+    style COMMENT_SVC fill:#10B981,color:#fff,stroke:#059669
+    style USER_SVC fill:#EC4899,color:#fff,stroke:#DB2777
+```
+
+### Key Events dalam EDA
+
+| Event | Publisher | Subscribers | Payload |
+|---|---|---|---|
+| `quiz.completed` | Quiz Service | Achievement Service, Clan/League Service | `{userId, readingId, score, total, timestamp}` |
+| `reading.finished` | Quiz Service | Achievement Service | `{userId, readingId, timestamp}` |
+| `user.registered` | Auth Service | Achievement Service | `{userId, username, timestamp}` |
+| `season.reset` | Clan Service (scheduled) | Clan Service, League Service | `{seasonId, timestamp}` |
+| `achievement.unlocked` | Achievement Service | User Service (notifications) | `{userId, achievementId, name, timestamp}` |
+
+### Database per Service
+
+| Service | Database | Tabel Utama |
+|---|---|---|
+| Auth Service | `auth_db` | `users`, `roles` |
+| Quiz Service | `quiz_db` | `readings`, `questions`, `options`, `quiz_attempts` |
+| Achievement Service | `achievement_db` | `achievements`, `user_achievements`, `daily_missions`, `user_daily_missions` |
+| Clan Service | `clan_db` | `clans`, `clan_members` |
+| Comment Service | `comment_db` | `comments`, `comment_reactions` |
+| User Service | `user_db` | `user_profiles` |
