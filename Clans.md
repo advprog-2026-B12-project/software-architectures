@@ -1,51 +1,86 @@
 # Component diagram
 
-@startuml
-!include https://raw.githubusercontent.com/plantuml-office/C4-PlantUML/master/C4_Component.puml
+```mermaid
+graph TB
+    subgraph api["⚙️ Backend API - Spring Boot Monolith"]
 
-LAYOUT_WITH_LEGEND()
+        subgraph controllerLayer["Controller Layer"]
+            clanCtrl["ClanController
+            Spring RestController
+            Manajemen klan, keanggotaan,
+            dan detail klan"]
 
-title Component Diagram - Clan & League Module
+            leagueCtrl["LeagueController
+            Spring RestController
+            Leaderboard divisi
+            dan reset season liga"]
+        end
 
-Container_Boundary(api, "Backend API") {
-    
-    ' Controllers
-    Component(clanCtrl, "Clan Controller", "Spring Boot RestController", "Menangani endpoint untuk manajemen klan, keanggotaan, dan detail klan.")
-    Component(leagueCtrl, "League Controller", "Spring Boot RestController", "Menangani endpoint untuk leaderboard divisi dan reset season liga.")
-    
-    ' Services
-    Component(clanSvc, "Clan Service", "Spring Service", "Mengelola logika bisnis klan seperti pembuatan klan, validasi join/leave, dan integrasi repositori.")
-    Component(leagueSvc, "League Service", "Spring Service", "Mengelola perhitungan skor klan secara kolektif dan rotasi divisi antar season.")
-    
-    ' Special Components
-    Component(resolver, "Clan Score Resolver", "Spring Component", "Menggunakan Strategy Pattern untuk memilih logika perhitungan skor berdasarkan divisi klan.")
-    Component(handler, "Global Exception Handler", "RestControllerAdvice", "Menangani dan memetakan exception modul klan ke dalam format API response yang konsisten.")
-    
-    ' Repositories
-    ComponentDb(clanRepo, "Clan Repository", "JPA Interface", "Abstraksi akses data untuk entitas Clan.")
-    ComponentDb(memberRepo, "Clan Member Repository", "JPA Interface", "Abstraksi akses data untuk entitas ClanMember.")
-}
+        subgraph serviceLayer["Service Layer"]
+            clanSvc["ClanService
+            Spring Service
+            Pembuatan klan, validasi
+            join/leave, integrasi repo"]
 
-ContainerDb(db, "PostgreSQL Database", "Relational Database", "Menyimpan tabel clans dan clan_members.")
+            leagueSvc["LeagueService
+            Spring Service
+            Perhitungan skor kolektif
+            dan rotasi divisi antar season"]
+        end
 
-' Relationships
-Rel(clanCtrl, clanSvc, "Menggunakan")
-Rel(leagueCtrl, leagueSvc, "Menggunakan")
+        subgraph specialLayer["Special Components"]
+            resolver["ClanScoreProviderResolver
+            Spring Component
+            Strategy Pattern: memilih logika
+            perhitungan skor per divisi
+            Bronze / Silver / Gold / Diamond"]
 
-Rel(clanSvc, clanRepo, "CRUD klan")
-Rel(clanSvc, memberRepo, "CRUD anggota")
+            handler["GlobalExceptionHandler
+            RestControllerAdvice
+            Memetakan exception ke format
+            API response yang konsisten
+            HTTP 400 / 403 / 404"]
+        end
 
-Rel(leagueSvc, resolver, "Meminta provider skor")
-Rel(leagueSvc, clanRepo, "Membaca data klan")
-Rel(leagueSvc, memberRepo, "Membaca data anggota")
+        subgraph repoLayer["Repository Layer · JPA"]
+            clanRepo[("ClanRepository
+            JPA Interface
+            Abstraksi akses data
+            entitas Clan")]
 
-Rel(clanRepo, db, "SQL/JDBC")
-Rel(memberRepo, db, "SQL/JDBC")
+            memberRepo[("ClanMemberRepository
+            JPA Interface
+            Abstraksi akses data
+            entitas ClanMember")]
+        end
 
-Rel(clanCtrl, handler, "Menangkap error via Advice")
-Rel(leagueCtrl, handler, "Menangkap error via Advice")
+    end
 
-@enduml
+    db[("PostgreSQL Database
+    Relational Database
+    Tabel: clans, clan_members")]
+
+    %% Controller → Service
+    clanCtrl   -->|"Menggunakan"| clanSvc
+    leagueCtrl -->|"Menggunakan"| leagueSvc
+
+    %% Controller → Exception Handler
+    clanCtrl   -->|"Error via Advice"| handler
+    leagueCtrl -->|"Error via Advice"| handler
+
+    %% ClanService → Repositories
+    clanSvc -->|"CRUD klan"| clanRepo
+    clanSvc -->|"CRUD anggota"| memberRepo
+
+    %% LeagueService → Resolver & Repositories
+    leagueSvc -->|"Meminta provider skor"| resolver
+    leagueSvc -->|"Membaca data klan"| clanRepo
+    leagueSvc -->|"Membaca data anggota"| memberRepo
+
+    %% Repositories → Database
+    clanRepo   -->|"SQL/JDBC"| db
+    memberRepo -->|"SQL/JDBC"| db
+```
 
 ### Justifikasi
 Diagram komponen ini merupakan dekomposisi dari container Backend API. Modul Clan dirancang dengan prinsip Separation of Concerns, di mana ClanService berfokus pada manajemen entitas klan, sementara LeagueService menangani fitur kompetitif. Implementasi ClanScoreProviderResolver menunjukkan penggunaan Strategy Pattern untuk menghitung skor secara dinamis. Seluruh komunikasi data keluar masuk modul difasilitasi oleh folder dto untuk menjaga enkapsulasi entitas database, dan manajemen error dipusatkan pada GlobalExceptionHandler.
@@ -53,158 +88,263 @@ Diagram komponen ini merupakan dekomposisi dari container Backend API. Modul Cla
 # Code Diagram
 
 ## Class Diagram - DTO Pattern & Core Domain
-@startuml
-title Class Diagram: Core Domain & DTO Pattern
+```mermaid
+graph TB
+    subgraph api[" Backend API - Clan Module"]
 
-package "entity" {
-    class Clan <<Entity>> {
-        - Long id
-        - String name
-        - String description
-        - Long leaderUserId
-        - String division
-        - Instant createdAt
-    }
-    class ClanMember <<Entity>> {
-        - Long id
-        - Long userId
-        - Role role
-        - Instant joinedAt
-    }
-    enum Role {
-        LEADER
-        MEMBER
-    }
-}
+        subgraph controllers["Controller Layer"]
+            clanCtrl["ClanController
+            Spring RestController
+            Menerima request dan mengembalikan
+            ClanResponse / ClanMemberResponse"]
+        end
 
-package "dto" {
-    class CreateClanRequest {
-        + Long userId
-        + String name
-        + String description
-    }
-    class ClanResponse {
-        + Long id
-        + String name
-        + String division
-        + long memberCount
-    }
-    class ClanMemberResponse {
-        + Long userId
-        + Role role
-    }
-}
+        subgraph dtos["DTO Layer"]
+            subgraph request["Request DTOs"]
+                createReq["CreateClanRequest
+                DTO / Record
+                userId, name 3-30 char,
+                description max 200"]
 
-Clan "1" *-- "many" ClanMember : contains
-ClanMember +-- Role
-ClanController ..> CreateClanRequest : consumes
-ClanController ..> ClanResponse : produces
-ClanService ..> Clan : manages
-@enduml
+                joinReq["JoinClanRequest
+                DTO / Record
+                userId [NotNull]"]
+            end
+
+            subgraph response["Response DTOs"]
+                clanResp["ClanResponse
+                DTO / Record
+                id, name, division,
+                memberCount, leaderUserId"]
+
+                memberResp["ClanMemberResponse
+                DTO / Record
+                userId, role"]
+            end
+        end
+
+        subgraph services["Service Layer"]
+            clanSvc["ClanService
+            Spring Service
+            Mengelola logika bisnis:
+            buat klan, join, leave, validasi role"]
+        end
+
+        subgraph entities["Entity Layer"]
+            clanEntity["Clan
+            JPA Entity
+            id, name, description,
+            leaderUserId, division, createdAt"]
+
+            memberEntity["ClanMember
+            JPA Entity
+            id, userId, clanId FK,
+            role LEADER/MEMBER, joinedAt"]
+        end
+
+        subgraph error["Error Handling"]
+            exHandler["GlobalExceptionHandler
+            RestControllerAdvice
+            ClanNotFoundException 404
+            UserAlreadyInClan 400
+            Unauthorized 403"]
+        end
+
+    end
+
+    clanCtrl -->|"Consumes"| createReq
+    clanCtrl -->|"Consumes"| joinReq
+    clanCtrl -->|"Produces"| clanResp
+    clanCtrl -->|"Produces"| memberResp
+    clanCtrl -->|"Delegates to"| clanSvc
+    clanSvc  -->|"Manages via JPA"| clanEntity
+    clanSvc  -->|"Manages via JPA"| memberEntity
+    clanCtrl -->|"Errors handled by"| exHandler
+    clanSvc  -->|"Throws to"| exHandler
+```
 
 ### Justifikasi
 Diagram ini menunjukkan penerapan Data Transfer Object (DTO) untuk menjaga enkapsulasi entitas database (Clan dan ClanMember). Dengan menggunakan DTO, modul memastikan bahwa perubahan pada struktur database tidak akan merusak kontrak API dengan frontend. Relasi komposisi antara Clan dan ClanMember memastikan integritas data dalam hubungan satu-ke-banyak.
 
 ## Class Diagram - League Strategy Pattern
-@startuml
-title Class Diagram: League Score Strategy Pattern
 
-interface ClanScoreProvider <<Interface>> {
-    + getDivision(): String
-    + calculateScore(List<MemberStat>): double
-}
+```mermaid
+graph TB
+    subgraph api["Backend API - League Module"]
+        leagueSvc["LeagueService
+        Spring Service
+        Mengorkestrasi kalkulasi skor musiman,
+        promosi, dan demosi divisi antar season"]
 
-class BronzeScoreProvider implements ClanScoreProvider
-class SilverScoreProvider implements ClanScoreProvider
-class GoldScoreProvider implements ClanScoreProvider
-class DiamondScoreProvider implements ClanScoreProvider
+        resolver["ClanScoreProviderResolver
+        Spring Component
+        Menerima nama divisi dan mengembalikan
+        ClanScoreProvider yang sesuai via providerMap"]
 
-class ClanScoreProviderResolver {
-    - providerMap: Map<String, ClanScoreProvider>
-    + resolve(String division): ClanScoreProvider
-}
+        iface["ClanScoreProvider
+        Java Interface
+        Kontrak kalkulasi skor: getDivision(): String
+        dan calculateScore(List~MemberStat~): double"]
 
-record MemberStat {
-    Long userId
-    int totalScore
-    double accuracy
-}
+        bronze["BronzeScoreProvider
+        Spring Component
+        Kalkulasi dasar berbasis totalScore"]
 
-LeagueService --> ClanScoreProviderResolver : uses
-ClanScoreProviderResolver o-- ClanScoreProvider : manages
-ClanScoreProvider ..> MemberStat : processes
-@enduml
+        silver["SilverScoreProvider
+        Spring Component
+        totalScore + bobot accuracy"]
+
+        gold["GoldScoreProvider
+        Spring Component
+        Weighted formula dengan multiplier"]
+
+        diamond["DiamondScoreProvider
+        Spring Component
+        ELO-style formula dengan winRate"]
+
+        memberStat["MemberStat
+        Java Record
+        userId, totalScore: int,
+        accuracy: double, winRate: double"]
+    end
+
+    leagueSvc -->|"Memanggil resolve(division)"| resolver
+    resolver -->|"Mengembalikan implementasi via providerMap"| iface
+
+    bronze -->|"implements"| iface
+    silver -->|"implements"| iface
+    gold -->|"implements"| iface
+    diamond -->|"implements"| iface
+
+    iface -->|"Memproses List~MemberStat~"| memberStat
+```
 
 ### Justifikasi
 Implementasi Strategy Pattern digunakan untuk menangani kalkulasi skor yang berbeda di tiap divisi (Bronze hingga Diamond). Dengan menggunakan ClanScoreProviderResolver, sistem dapat menentukan algoritma perhitungan secara dinamis pada saat runtime. Desain ini mematuhi Open-Closed Principle, di mana divisi baru dapat ditambahkan hanya dengan membuat class provider baru tanpa mengubah kode logic yang sudah ada.
 
 ## Sequence Diagram - Join Clan Flow
-@startuml
-title Sequence Diagram: Join Clan Workflow
+```mermaid
+sequenceDiagram
+    actor User
+    participant CC as ClanController<br/>@RestController
+    participant CS as ClanService<br/>@Service
+    participant CMR as ClanMemberRepository<br/>@Repository
+    participant CR as ClanRepository<br/>@Repository
+    participant EH as GlobalExceptionHandler<br/>@RestControllerAdvice
 
-actor User
-participant ClanController
-participant ClanService
-participant ClanMemberRepository
-participant ClanRepository
+    User->>CC: POST /clans/{clanId}/join<br/>body: JoinClanRequest { userId }
+    activate CC
 
-User -> ClanController : joinClan(clanId, JoinClanRequest)
-activate ClanController
+    CC->>CS: joinClan(userId, clanId)
+    activate CS
 
-ClanController -> ClanService : joinClan(userId, clanId)
-activate ClanService
+    Note right of CS: Validasi 1: cek apakah<br/>user sudah punya klan
 
-ClanService -> ClanMemberRepository : existsByUserId(userId)
-alt User already has a clan
-    ClanService --[#red]> ClanController : throw UserAlreadyInClanException
-else User is eligible
-    ClanService -> ClanRepository : findById(clanId)
-    ClanRepository --> ClanService : Optional<Clan>
-    
-    ClanService -> ClanMemberRepository : save(new ClanMember)
-    activate ClanMemberRepository
-    ClanMemberRepository --> ClanService : savedEntity
-    deactivate ClanMemberRepository
-    
-    ClanService --> ClanController : ClanMemberResponse
-end
+    CS->>CMR: existsByUserId(userId)
+    activate CMR
+    CMR-->>CS: boolean
+    deactivate CMR
 
-deactivate ClanService
-ClanController --> User : 200 OK / Error Response
-deactivate ClanController
-@enduml
+    alt User already has a clan
+        CS->>EH: throw UserAlreadyInClanException
+        activate EH
+        EH-->>CC: ResponseEntity<br/>HTTP 400 Bad Request<br/>{ "error": "User already in a clan" }
+        deactivate EH
+        CC-->>User: HTTP 400 Bad Request
+
+    else User is eligible
+        Note right of CS: Validasi 2: pastikan<br/>klan dengan clanId ada
+
+        CS->>CR: findById(clanId)
+        activate CR
+        CR-->>CS: Optional~Clan~
+        deactivate CR
+
+        alt Clan not found
+            CS->>EH: throw ClanNotFoundException
+            activate EH
+            EH-->>CC: ResponseEntity<br/>HTTP 404 Not Found<br/>{ "error": "Clan not found" }
+            deactivate EH
+            CC-->>User: HTTP 404 Not Found
+
+        else Clan exists
+            Note right of CS: Buat entitas ClanMember baru<br/>dengan role default: MEMBER
+
+            CS->>CMR: save(new ClanMember)<br/>{ userId, clanId, role: MEMBER, joinedAt: now() }
+            activate CMR
+            CMR-->>CS: ClanMember (savedEntity)
+            deactivate CMR
+
+            CS-->>CC: ClanMemberResponse<br/>{ userId, role: MEMBER }
+            CC-->>User: HTTP 200 OK<br/>{ userId, role: MEMBER }
+        end
+    end
+
+    deactivate CS
+    deactivate CC
+```
 
 ### Justifikasi
 Diagram ini menggambarkan alur kerja dinamis dan validasi bisnis saat pengguna mencoba bergabung dengan klan. Proses ini melibatkan pengecekan status keanggotaan pada ClanMemberRepository sebelum melakukan persistensi data. Hal ini menunjukkan koordinasi antar komponen yang sinkron untuk memastikan seorang pengguna tidak dapat memiliki lebih dari satu klan secara bersamaan.
 
 ## Sequence Diagram - Exception Handling Architecture
-@startuml
-title Class Diagram: Centralized Exception Handling
 
-class GlobalExceptionHandler <<RestControllerAdvice>> {
-    + handleClanNotFound(ClanNotFoundException): ResponseEntity
-    + handleBadRequest(RuntimeException): ResponseEntity
-    + handleForbidden(UnauthorizedClanActionException): ResponseEntity
-}
+```mermaid
+classDiagram
+    class GlobalExceptionHandler {
+        <<RestControllerAdvice>>
+        +handleClanNotFound(ClanNotFoundException) ResponseEntity~ErrorResponse~
+        +handleUserAlreadyInClan(UserAlreadyInClanException) ResponseEntity~ErrorResponse~
+        +handleUserNotInClan(UserNotInClanException) ResponseEntity~ErrorResponse~
+        +handleForbidden(UnauthorizedClanActionException) ResponseEntity~ErrorResponse~
+        -buildErrorResponse(int status, String message) ErrorResponse
+    }
 
-package "exceptions" {
-    class ClanNotFoundException <<RuntimeException>>
-    class UserAlreadyInClanException <<RuntimeException>>
-    class UserNotInClanException <<RuntimeException>>
-    class UnauthorizedClanActionException <<RuntimeException>>
-}
+    class ErrorResponse {
+        <<Record>>
+        +int status
+        +String error
+        +String message
+        +Instant timestamp
+    }
 
-GlobalExceptionHandler ..> ClanNotFoundException : catches
-GlobalExceptionHandler ..> UserAlreadyInClanException : catches
-GlobalExceptionHandler ..> UserNotInClanException : catches
-GlobalExceptionHandler ..> UnauthorizedClanActionException : catches
+    class ClanBaseException {
+        <<abstract>>
+        -String message
+        +ClanBaseException(String message)
+    }
 
-note right of GlobalExceptionHandler
-  Maps custom exceptions to 
-  proper HTTP Status Codes 
-  (404, 400, 403)
-end note
-@enduml
+    class ClanNotFoundException {
+        <<RuntimeException>>
+        +ClanNotFoundException(Long clanId)
+    }
+
+    class UserAlreadyInClanException {
+        <<RuntimeException>>
+        +UserAlreadyInClanException(Long userId)
+    }
+
+    class UserNotInClanException {
+        <<RuntimeException>>
+        +UserNotInClanException(Long userId)
+    }
+
+    class UnauthorizedClanActionException {
+        <<RuntimeException>>
+        +UnauthorizedClanActionException(Long userId)
+    }
+
+    ClanBaseException <|-- ClanNotFoundException : extends
+    ClanBaseException <|-- UserAlreadyInClanException : extends
+    ClanBaseException <|-- UserNotInClanException : extends
+    ClanBaseException <|-- UnauthorizedClanActionException : extends
+
+    GlobalExceptionHandler ..> ClanNotFoundException : catches HTTP 404
+    GlobalExceptionHandler ..> UserAlreadyInClanException : catches HTTP 400
+    GlobalExceptionHandler ..> UserNotInClanException : catches HTTP 400
+    GlobalExceptionHandler ..> UnauthorizedClanActionException : catches HTTP 403
+    GlobalExceptionHandler ..> ErrorResponse : produces
+```
 
 ### Justifikasi
 Menunjukkan arsitektur penanganan error terpusat menggunakan @RestControllerAdvice. Dengan menangkap custom exceptions (seperti ClanNotFoundException) secara global, modul ini memisahkan logika penanganan error dari logika bisnis utama. Hal ini meningkatkan keterbacaan kode dan memastikan klien API selalu menerima respon HTTP yang konsisten (404, 400, atau 403).
