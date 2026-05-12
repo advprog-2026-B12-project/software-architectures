@@ -338,5 +338,5 @@ Strategi migrasi yang direkomendasikan adalah Strangler Fig Pattern. Ekstrak sat
 
 ## Individual Diagram
 
-| [Ahmad Faiq Fawwaz Abdussalam](Auth.md) | [Sabina Maritza Moenzil]() | [Julius Albert Wirayudas]() | [Muhammad Hariz Albaari](Comments.md) | [Fadhil Daffa Putra Irawan](Clans.md) |
-| -- | -- | -- | -- | -- |
+| [Ahmad Faiq Fawwaz Abdussalam](Auth.md) | [Sabina Maritza Moenzil](Quiz.md) | [Julius Albert Wirayudas]() | [Muhammad Hariz Albaari](Comments.md) | [Fadhil Daffa Putra Irawan](Clans.md) |
+| -- |-----------------------------------| -- | -- | -- |
