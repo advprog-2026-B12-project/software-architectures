@@ -292,7 +292,7 @@ graph LR
 
 ---
 
-## 6. Bagaimana EDA Menyelesaikan Risiko yang Teridentifikasi
+## Bagaimana EDA Menyelesaikan Risiko yang Teridentifikasi
 
 | Risiko | Solusi EDA |
 |---|---|
